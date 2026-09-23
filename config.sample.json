@@ -1,9 +1,9 @@
 {
-  "applicationName": "FluffyChat",
-  "defaultHomeserver": "matrix.org",
+  "applicationName": "GapAndishe",
+  "defaultHomeserver": "https://gap.andishehoseini.com/",
   "presetHomeserver": "",
   "welcomeText": "",
-  "privacyUrl": "https://github.com/krille-chan/fluffychat/blob/main/PRIVACY.md",
+  "privacyUrl": "https://andishehoseini.com/privacy",
   "audioRecordingNumChannels": 1,
   "audioRecordingAutoGain": true,
   "audioRecordingEchoCancel": false,
