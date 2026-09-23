@@ -1,9 +1,9 @@
 {
     "public_servers": [
         {
-            "name": "matrix.org",
-            "website": "https://matrix.org",
-            "description": "The Matrix.org Foundation offers the matrix.org homeserver as an easy entry point for anyone wanting to try out Matrix.",
+            "name": "gapandishe",
+            "website": "https://gap.andishehoseini.com/",
+            "description": "andishe",
             "reg_method": "oidc",
             "languages": [
                 "All",
