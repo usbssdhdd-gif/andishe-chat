@@ -1,83 +1,69 @@
-name: Main Deploy Workflow
+name: Build Signed Release APK
 
 on:
+  workflow_dispatch: # امکان اجرای دستی از تب Actions
   push:
     branches:
       - main
-  workflow_dispatch:
+      - master
 
 concurrency:
-  group: main_deploy
+  group: build-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  deploy_web:
+  build:
+    name: Build Signed Android APK
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version-file: .tool_versions.yaml
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
-      - name: Prepare web
-        run: ./scripts/prepare-web.sh
-      - run: rm ./assets/vodozemac/.gitignore
-      - run: flutter pub get
-      - name: Build Release Web
-        run: flutter build web --dart-define=FLUTTER_WEB_CANVASKIT_URL=canvaskit/ --release --source-maps --base-href "/nightly/"
-      - run: mv build/web/ public
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          personal_token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
-          publish_dir: ./public
-          publish_branch: gh-pages
-          destination_dir: nightly
 
-  deploy_playstore_internal:
-    runs-on: ubuntu-latest
-    concurrency:
-      group: deploy_playstore
-      queue: max
     steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java Development Kit (JDK 17)
+        uses: actions/setup-java@v4
         with:
-          flutter-version-file: .tool_versions.yaml
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Flutter Engine
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
           cache: true
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.3'
-      - uses: ./.github/actions/free_up_space
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Fastlane
-        run: gem install fastlane -NV
-      - name: Add Firebase Messaging
-        run: |
-          echo '${{secrets.GOOGLE_SERVICES_JSON}}' | base64 -d > android/app/google-services.json
-          ./scripts/add-firebase-messaging.sh
-      - run: flutter pub get
-      - name: Prepare Android Release Build
+
+      - name: Setup Rust Toolchain (Required for Matrix SDK)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Decode & Configure Android Keystore
         env:
-          FDROID_KEY: ${{ secrets.FDROID_KEY }}
-          FDROID_KEY_PASS: ${{ secrets.FDROID_KEY_PASS }}
-          PLAYSTORE_DEPLOY_KEY: ${{ secrets.PLAYSTORE_DEPLOY_KEY }}
-        run: ./scripts/prepare-android-release.sh
-      - name: Remove Android Auto metadata for Play Store
-        run: sed -i '/Android Auto/,/automotive_app_desc/d' android/app/src/main/AndroidManifest.xml
-      - name: Build Android Release
-        run: flutter build appbundle --target-platform android-arm,android-arm64
-      - name: Set changelog
-        working-directory: android/fastlane/metadata/android/en-US/changelogs
-        run: git log --no-merges -1 --pretty=%B > default.txt
-      - name: Deploy Android Release
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          mkdir -p build/android
-          cp build/app/outputs/bundle/release/app-release.aab build/android/
-          cd android
-          bundle install
-          bundle update fastlane
-          bundle exec fastlane deploy_internal_test
-          cd ..
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/my-release-key.jks
+          cat <<EOF > android/key.properties
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=my-release-key.jks
+          EOF
+
+      - name: Install Project Dependencies
+        run: flutter pub get
+
+      - name: Compile Release APK (Universal Fat APK)
+        run: |
+          flutter build apk --release \
+            --target-platform android-arm,android-arm64,android-x64 \
+            --split-per-abi=false
+
+      - name: Upload Signed APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluffychat-signed-release
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
